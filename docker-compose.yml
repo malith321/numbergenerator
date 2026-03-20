@@ -1,3 +1,10 @@
+networks:
+  prime_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.100.0/24
+
 services:
 
   db:
@@ -10,13 +17,13 @@ services:
       POSTGRES_DB: prime_db
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - prime_net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U prime_user -d prime_db"]
       interval: 5s
       timeout: 5s
       retries: 10
-    ports:
-      - "5432:5432"   # Expose for local inspection (optional)
 
   api:
     build:
@@ -31,7 +38,10 @@ services:
       DATABASE_URL: postgresql://prime_user:prime_pass@db:5432/prime_db
       WORKERS: 4
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+    networks:
+      prime_net:
+        ipv4_address: 192.168.100.3
 
 volumes:
   pgdata:
