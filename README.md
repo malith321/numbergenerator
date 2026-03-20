@@ -17,18 +17,6 @@ A production-ready HTTP microservice that generates prime numbers over a user-su
   - [Architecture](#architecture)
   - [Windows Setup](#windows-setup)
   - [Connecting a Phone](#connecting-a-phone)
-- [Task 3 — AWS Cloud Deployment](#task-3--aws-cloud-deployment)
-  - [AWS Architecture](#aws-architecture)
-  - [Prerequisites](#prerequisites)
-  - [Step 1 — VPC & Subnets](#step-1--vpc--subnets)
-  - [Step 2 — Security Groups](#step-2--security-groups)
-  - [Step 3 — RDS Database](#step-3--rds-database)
-  - [Step 4 — ECR & ECS Fargate](#step-4--ecr--ecs-fargate)
-  - [Step 5 — VPN Gateway on EC2](#step-5--vpn-gateway-on-ec2)
-  - [Step 6 — IAM Users & Permissions](#step-6--iam-users--permissions)
-  - [Step 7 — Verify & Test](#step-7--verify--test)
-  - [Cost Estimate](#cost-estimate)
-  - [Teardown](#teardown)
 
 ---
 
