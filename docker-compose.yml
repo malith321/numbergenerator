@@ -1,0 +1,37 @@
+services:
+
+  db:
+    image: postgres:16-alpine
+    container_name: prime_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: prime_user
+      POSTGRES_PASSWORD: prime_pass
+      POSTGRES_DB: prime_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prime_user -d prime_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"   # Expose for local inspection (optional)
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: prime_api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://prime_user:prime_pass@db:5432/prime_db
+      WORKERS: 4
+    ports:
+      - "8000:8000"
+
+volumes:
+  pgdata:
