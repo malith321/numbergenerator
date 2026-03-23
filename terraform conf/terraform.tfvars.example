@@ -1,0 +1,25 @@
+# ── terraform.tfvars ──────────────────────────────────────────────────────────
+# Copy this file to terraform.tfvars and fill in your values.
+# NEVER commit terraform.tfvars to git — it contains secrets.
+# ─────────────────────────────────────────────────────────────────────────────
+
+aws_region  = "eu-west-1"
+project     = "prime"
+environment = "dev"
+
+# Database
+db_name     = "prime_db"
+db_username = "prime_user"
+db_password = "ChangeMe123!"   # Use a strong password
+
+# ECS — fill in after pushing your image to ECR
+# Run: aws ecr create-repository --repository-name prime-api
+# Then push your image and paste the full URL here
+ecr_image_url = "123456789012.dkr.ecr.eu-west-1.amazonaws.com/prime-api:latest"
+
+# VPN — name of your EC2 key pair (create in AWS console → EC2 → Key Pairs)
+key_pair_name = "my-key-pair"
+
+# IAM users to create (optional — leave empty [] if not needed)
+developer_users = ["alice", "charlie"]
+readonly_users  = ["bob"]

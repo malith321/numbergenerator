@@ -1,0 +1,1 @@
+{"Modules":[{"Key":"","Source":"","Dir":"."},{"Key":"ecs","Source":"./modules/ecs","Dir":""},{"Key":"iam","Source":"./modules/iam","Dir":""},{"Key":"rds","Source":"./modules/rds","Dir":""},{"Key":"security","Source":"./modules/security","Dir":""},{"Key":"vpc","Source":"./modules/vpc","Dir":""},{"Key":"vpn","Source":"./modules/vpn","Dir":""}]}
