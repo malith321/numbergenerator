@@ -17,6 +17,25 @@ A production-ready HTTP microservice that generates prime numbers over a user-su
   - [Architecture](#architecture)
   - [Windows Setup](#windows-setup)
   - [Connecting a Phone](#connecting-a-phone)
+- [Task 3 — AWS Cloud Deployment](#task-3--aws-cloud-deployment)
+  - [AWS Architecture](#aws-architecture)
+  - [Prerequisites](#prerequisites)
+  - [Step 1 — VPC & Subnets](#step-1--vpc--subnets)
+  - [Step 2 — Security Groups](#step-2--security-groups)
+  - [Step 3 — RDS Database](#step-3--rds-database)
+  - [Step 4 — ECR & ECS Fargate](#step-4--ecr--ecs-fargate)
+  - [Step 5 — VPN Gateway on EC2](#step-5--vpn-gateway-on-ec2)
+  - [Step 6 — IAM Users & Permissions](#step-6--iam-users--permissions)
+  - [Step 7 — Verify & Test](#step-7--verify--test)
+  - [Cost Estimate](#cost-estimate)
+  - [Teardown](#teardown)
+- [Terraform Deployment](#terraform-deployment)
+  - [Terraform Project Structure](#terraform-project-structure)
+  - [Terraform Prerequisites](#terraform-prerequisites)
+  - [Terraform Quick Start](#terraform-quick-start)
+  - [Terraform Modules](#terraform-modules)
+  - [Updating the API](#updating-the-api)
+  - [Terraform Teardown](#terraform-teardown)
 
 ---
 
@@ -390,8 +409,11 @@ http://127.0.0.1:8000/docs
 
 ---
 
-WS Cloud Deployment
-AWS Architecture
+# Task 3 — AWS Cloud Deployment
+
+## AWS Architecture
+
+```
 Internet
     │
     │ HTTPS / UDP 51820
@@ -419,10 +441,24 @@ Internet
 │  │  IAM: prime-readonly group                   │   │
 │  └──────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────┘
-AWS ServicePurposeVPCPrivate network isolating all resourcesEC2 (t3.micro)WireGuard VPN gateway in public subnetECS FargateRuns prime_api container — no server managementRDS PostgreSQLManaged database with automated backupsECRPrivate Docker image registryIAMUser access control and permissionsSecrets ManagerStores DB credentials securely
-Prerequisites
+```
+
+| AWS Service | Purpose |
+|---|---|
+| VPC | Private network isolating all resources |
+| EC2 (t3.micro) | WireGuard VPN gateway in public subnet |
+| ECS Fargate | Runs prime_api container — no server management |
+| RDS PostgreSQL | Managed database with automated backups |
+| ECR | Private Docker image registry |
+| IAM | User access control and permissions |
+| Secrets Manager | Stores DB credentials securely |
+
+## Prerequisites
+
 Install and configure the AWS CLI:
-bash# Install AWS CLI v2
+
+```bash
+# Install AWS CLI v2
 # https://aws.amazon.com/cli/
 
 aws configure
@@ -430,9 +466,14 @@ aws configure
 # AWS Secret Access Key: YOUR_SECRET_KEY
 # Default region:        eu-west-1
 # Default output format: json
+```
+
 Also required: Docker Desktop running locally.
-Step 1 — VPC & Subnets
-bash# Create VPC
+
+## Step 1 — VPC & Subnets
+
+```bash
+# Create VPC
 aws ec2 create-vpc --cidr-block 10.0.0.0/16 \
   --tag-specifications 'ResourceType=vpc,Tags=[{Key=Name,Value=prime-vpc}]'
 VPC_ID=vpc-xxxxxxxxx   # save from output
@@ -465,8 +506,12 @@ aws ec2 create-route-table --vpc-id $VPC_ID
 aws ec2 create-route --route-table-id $RTB_ID \
   --destination-cidr-block 0.0.0.0/0 --gateway-id $IGW_ID
 aws ec2 associate-route-table --subnet-id $PUBLIC_SUBNET_ID --route-table-id $RTB_ID
-Step 2 — Security Groups
-bash# VPN gateway — only UDP 51820 inbound
+```
+
+## Step 2 — Security Groups
+
+```bash
+# VPN gateway — only UDP 51820 inbound
 aws ec2 create-security-group --group-name sg-vpn \
   --vpc-id $VPC_ID --description 'WireGuard VPN gateway'
 aws ec2 authorize-security-group-ingress --group-id $SG_VPN \
@@ -483,8 +528,12 @@ aws ec2 create-security-group --group-name sg-db \
   --vpc-id $VPC_ID --description 'Prime DB'
 aws ec2 authorize-security-group-ingress --group-id $SG_DB \
   --protocol tcp --port 5432 --source-group $SG_API
-Step 3 — RDS Database
-bash# Subnet group (requires 2 AZs)
+```
+
+## Step 3 — RDS Database
+
+```bash
+# Subnet group (requires 2 AZs)
 aws rds create-db-subnet-group \
   --db-subnet-group-name prime-db-subnet-group \
   --db-subnet-group-description 'Prime DB subnet group' \
@@ -514,9 +563,14 @@ aws rds wait db-instance-available --db-instance-identifier prime-db
 # Get the DB endpoint
 aws rds describe-db-instances --db-instance-identifier prime-db \
   --query 'DBInstances[0].Endpoint.Address' --output text
-Step 4 — ECR & ECS Fargate
-Push image to ECR
-bash# Create registry
+```
+
+## Step 4 — ECR & ECS Fargate
+
+### Push image to ECR
+
+```bash
+# Create registry
 aws ecr create-repository --repository-name prime-api
 
 # Login and push
@@ -529,12 +583,21 @@ docker tag prime-api:latest \
   YOUR_ACCOUNT_ID.dkr.ecr.eu-west-1.amazonaws.com/prime-api:latest
 docker push \
   YOUR_ACCOUNT_ID.dkr.ecr.eu-west-1.amazonaws.com/prime-api:latest
-Create ECS cluster
-bashaws ecs create-cluster --cluster-name prime-cluster \
+```
+
+### Create ECS cluster
+
+```bash
+aws ecs create-cluster --cluster-name prime-cluster \
   --capacity-providers FARGATE
-Register task definition
-Save as task-definition.json:
-json{
+```
+
+### Register task definition
+
+Save as `task-definition.json`:
+
+```json
+{
   "family": "prime-api-task",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
@@ -559,7 +622,10 @@ json{
     }
   }]
 }
-bashaws ecs register-task-definition --cli-input-json file://task-definition.json
+```
+
+```bash
+aws ecs register-task-definition --cli-input-json file://task-definition.json
 
 aws ecs create-service \
   --cluster prime-cluster \
@@ -571,9 +637,14 @@ aws ecs create-service \
     subnets=[$PRIVATE_SUBNET_A],
     securityGroups=[$SG_API],
     assignPublicIp=DISABLED}"
-Step 5 — VPN Gateway on EC2
-Launch instance
-bashaws ec2 run-instances \
+```
+
+## Step 5 — VPN Gateway on EC2
+
+### Launch instance
+
+```bash
+aws ec2 run-instances \
   --image-id ami-0905a3c97561e0b69 \
   --instance-type t3.micro \
   --subnet-id $PUBLIC_SUBNET_ID \
@@ -581,8 +652,12 @@ bashaws ec2 run-instances \
   --associate-public-ip-address \
   --key-name your-key-pair \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=prime-vpn}]'
-Configure WireGuard on EC2
-bashssh -i your-key.pem ec2-user@YOUR_EC2_PUBLIC_IP
+```
+
+### Configure WireGuard on EC2
+
+```bash
+ssh -i your-key.pem ec2-user@YOUR_EC2_PUBLIC_IP
 
 # Install WireGuard
 sudo dnf install wireguard-tools -y
@@ -613,8 +688,12 @@ echo 'net.ipv4.ip_forward=1' | sudo tee -a /etc/sysctl.conf
 sudo sysctl -p
 sudo systemctl enable wg-quick@wg0
 sudo systemctl start wg-quick@wg0
-Generate client config for each user
-bash# Run on EC2 for each new user
+```
+
+### Generate client config for each user
+
+```bash
+# Run on EC2 for each new user
 wg genkey | tee client_private.key | wg pubkey > client_public.key
 
 sudo wg set wg0 peer $(cat client_public.key) allowed-ips 10.8.0.2/32
@@ -631,16 +710,31 @@ Endpoint = YOUR_EC2_PUBLIC_IP:51820
 AllowedIPs = 10.0.2.0/24
 PersistentKeepalive = 25
 EOF
-Send client.conf securely to the user. They import it into their WireGuard app and activate.
-Step 6 — IAM Users & Permissions
+```
+
+Send `client.conf` securely to the user. They import it into their WireGuard app and activate.
+
+## Step 6 — IAM Users & Permissions
+
 Two groups control access:
-GroupCan Doprime-developersDeploy containers, view logs, describe RDS/VPC resourcesprime-readonlyView ECS metrics and CloudWatch logs only
-Create groups and policies
-bash# Create groups
+
+| Group | Can Do |
+|---|---|
+| `prime-developers` | Deploy containers, view logs, describe RDS/VPC resources |
+| `prime-readonly` | View ECS metrics and CloudWatch logs only |
+
+### Create groups and policies
+
+```bash
+# Create groups
 aws iam create-group --group-name prime-developers
 aws iam create-group --group-name prime-readonly
-Save as developer-policy.json:
-json{
+```
+
+Save as `developer-policy.json`:
+
+```json
+{
   "Version": "2012-10-17",
   "Statement": [{
     "Effect": "Allow",
@@ -655,8 +749,12 @@ json{
     }
   }]
 }
-Save as readonly-policy.json:
-json{
+```
+
+Save as `readonly-policy.json`:
+
+```json
+{
   "Version": "2012-10-17",
   "Statement": [{
     "Effect": "Allow",
@@ -668,7 +766,10 @@ json{
     "Resource": "*"
   }]
 }
-bash# Attach policies to groups
+```
+
+```bash
+# Attach policies to groups
 aws iam create-policy --policy-name prime-developer-policy \
   --policy-document file://developer-policy.json
 aws iam attach-group-policy --group-name prime-developers \
@@ -688,8 +789,12 @@ aws iam add-user-to-group --user-name bob --group-name prime-readonly
 
 # Generate access keys
 aws iam create-access-key --user-name alice
-Step 7 — Verify & Test
-bash# Check ECS service is running
+```
+
+## Step 7 — Verify & Test
+
+```bash
+# Check ECS service is running
 aws ecs describe-services --cluster prime-cluster \
   --services prime-api-service \
   --query 'services[0].runningCount'
@@ -709,11 +814,25 @@ curl "http://ECS_PRIVATE_IP:8000/primes?start=1&end=50"
 
 # Without VPN — should time out
 curl --max-time 3 http://ECS_PRIVATE_IP:8000/health
-Cost Estimate
-ResourceMonthly CostECS Fargate (0.5 vCPU, 1GB)~$15RDS db.t3.micro PostgreSQL~$15EC2 t3.micro VPN gateway~$8 (free tier eligible)ECR storage~$0.10/GBData transfer~$1–5Total~$39–43/month
-Teardown
+```
+
+## Cost Estimate
+
+| Resource | Monthly Cost |
+|---|---|
+| ECS Fargate (0.5 vCPU, 1GB) | ~$15 |
+| RDS db.t3.micro PostgreSQL | ~$15 |
+| EC2 t3.micro VPN gateway | ~$8 (free tier eligible) |
+| ECR storage | ~$0.10/GB |
+| Data transfer | ~$1–5 |
+| **Total** | **~$39–43/month** |
+
+## Teardown
+
 Remove all resources in this order to avoid charges:
-bashaws ecs delete-service --cluster prime-cluster \
+
+```bash
+aws ecs delete-service --cluster prime-cluster \
   --service prime-api-service --force
 aws ecs delete-cluster --cluster prime-cluster
 aws rds delete-db-instance --db-instance-identifier prime-db \
@@ -725,10 +844,17 @@ aws ec2 delete-security-group --group-id $SG_API
 aws ec2 delete-security-group --group-id $SG_DB
 # Delete subnets, detach/delete IGW, delete VPC
 aws ec2 delete-vpc --vpc-id $VPC_ID
+```
 
-Terraform Deployment
+---
+
+# Terraform Deployment
+
 Instead of running AWS CLI commands manually, you can use Terraform to create and destroy all infrastructure in a single command.
-Terraform Project Structure
+
+## Terraform Project Structure
+
+```
 terraform-prime/
 ├── main.tf                    ← wires all modules together
 ├── variables.tf               ← all configurable inputs
@@ -743,23 +869,32 @@ terraform-prime/
     ├── ecs/       ← ECR repo, ECS cluster, task definition, service
     ├── vpn/       ← EC2 instance + Elastic IP + WireGuard bootstrap
     └── iam/       ← groups, policies, users
-Terraform Prerequisites
+```
 
-Terraform >= 1.6 — install on Windows:
+## Terraform Prerequisites
 
-powershell   winget install Hashicorp.Terraform
+1. **Terraform >= 1.6** — install on Windows:
+   ```powershell
+   winget install Hashicorp.Terraform
    terraform -version
+   ```
+2. **AWS CLI configured** — `aws configure`
+3. **Docker Desktop running**
+4. **An EC2 key pair** — create in AWS Console → EC2 → Key Pairs
 
-AWS CLI configured — aws configure
-Docker Desktop running
-An EC2 key pair — create in AWS Console → EC2 → Key Pairs
+## Terraform Quick Start
 
-Terraform Quick Start
-Step 1 — Set up your config file
-powershellcopy terraform.tfvars.example terraform.tfvars
+### Step 1 — Set up your config file
+
+```powershell
+copy terraform.tfvars.example terraform.tfvars
 notepad terraform.tfvars
+```
+
 Fill in your values:
-hclaws_region    = "eu-west-1"
+
+```hcl
+aws_region    = "eu-west-1"
 project       = "prime"
 environment   = "dev"
 db_password   = "ChangeMe123!"
@@ -768,8 +903,12 @@ ecr_image_url = "123456789012.dkr.ecr.eu-west-1.amazonaws.com/prime-api:latest"
 
 developer_users = ["alice"]
 readonly_users  = ["bob"]
-Step 2 — Push your Docker image to ECR first
-powershell# Get your AWS account ID
+```
+
+### Step 2 — Push your Docker image to ECR first
+
+```powershell
+# Get your AWS account ID
 $ACCOUNT_ID = aws sts get-caller-identity --query Account --output text
 
 # Create ECR repository
@@ -784,26 +923,54 @@ aws ecr get-login-password --region eu-west-1 | `
 docker build -t prime-api .
 docker tag prime-api:latest "$ECR_URL/prime-api:latest"
 docker push "$ECR_URL/prime-api:latest"
-Update ecr_image_url in terraform.tfvars with the full URL shown above.
-Step 3 — Initialise Terraform
-powershellterraform init
-Step 4 — Preview what will be created
-powershellterraform plan
+```
+
+Update `ecr_image_url` in `terraform.tfvars` with the full URL shown above.
+
+### Step 3 — Initialise Terraform
+
+```powershell
+terraform init
+```
+
+### Step 4 — Preview what will be created
+
+```powershell
+terraform plan
+```
+
 Review the list of resources before applying.
-Step 5 — Deploy everything
-powershellterraform apply
-Type yes when prompted. Takes about 8–12 minutes (RDS takes the longest).
-Step 6 — Check outputs
-powershellterraform output
+
+### Step 5 — Deploy everything
+
+```powershell
+terraform apply
+```
+
+Type `yes` when prompted. Takes about **8–12 minutes** (RDS takes the longest).
+
+### Step 6 — Check outputs
+
+```powershell
+terraform output
+```
+
 You will see:
+
+```
 vpn_public_ip      = "1.2.3.4"
 ecr_repository_url = "123456789012.dkr.ecr.eu-west-1.amazonaws.com/prime-api"
 ssh_command        = "ssh -i my-key-pair.pem ec2-user@1.2.3.4"
 developer_group    = "prime-developers"
 readonly_group     = "prime-readonly"
-Step 7 — Configure WireGuard client
+```
+
+### Step 7 — Configure WireGuard client
+
 SSH into the VPN instance and generate a peer config for your user:
-bashssh -i my-key-pair.pem ec2-user@VPN_PUBLIC_IP
+
+```bash
+ssh -i my-key-pair.pem ec2-user@VPN_PUBLIC_IP
 
 # Generate client keys
 wg genkey | tee client_private.key | wg pubkey > client_public.key
@@ -826,24 +993,48 @@ PersistentKeepalive = 25
 EOF
 
 cat client.conf
-Copy the client.conf output and import it into your WireGuard app, then activate.
-Step 8 — Test the API
+```
+
+Copy the `client.conf` output and import it into your WireGuard app, then activate.
+
+### Step 8 — Test the API
+
 With VPN connected, get the ECS task private IP:
-powershell$TASK = aws ecs list-tasks --cluster prime-cluster `
+
+```powershell
+$TASK = aws ecs list-tasks --cluster prime-cluster `
   --service-name prime-api-service --query 'taskArns[0]' --output text
 
 aws ecs describe-tasks --cluster prime-cluster --tasks $TASK `
   --query 'tasks[0].attachments[0].details[?name==`privateIPv4Address`].value'
+```
+
 Then test:
-powershellcurl.exe http://ECS_PRIVATE_IP:8000/health
+
+```powershell
+curl.exe http://ECS_PRIVATE_IP:8000/health
 # {"status":"ok"}
 
 curl.exe "http://ECS_PRIVATE_IP:8000/primes?start=1&end=100"
-Terraform Modules
-ModuleWhat it createsvpcVPC, public subnet, 2 private subnets, internet gateway, route tables, DB subnet groupsecuritysg-vpn (UDP 51820), sg-api (TCP 8000 from VPN only), sg-db (TCP 5432 from API only)rdsRDS PostgreSQL 16 on db.t3.micro, 20GB, 7-day backups, no public accessecsECR repo, ECS cluster, Fargate task definition (0.5 vCPU / 1GB), ECS service, CloudWatch log group, IAM execution rolevpnEC2 t3.micro with WireGuard auto-installed via user_data, Elastic IP for stable endpointiamprime-developers group (deploy access), prime-readonly group (logs/metrics only), one IAM user per name in your tfvars lists
-Updating the API
+```
+
+## Terraform Modules
+
+| Module | What it creates |
+|---|---|
+| `vpc` | VPC, public subnet, 2 private subnets, internet gateway, route tables, DB subnet group |
+| `security` | `sg-vpn` (UDP 51820), `sg-api` (TCP 8000 from VPN only), `sg-db` (TCP 5432 from API only) |
+| `rds` | RDS PostgreSQL 16 on `db.t3.micro`, 20GB, 7-day backups, no public access |
+| `ecs` | ECR repo, ECS cluster, Fargate task definition (0.5 vCPU / 1GB), ECS service, CloudWatch log group, IAM execution role |
+| `vpn` | EC2 `t3.micro` with WireGuard auto-installed via `user_data`, Elastic IP for stable endpoint |
+| `iam` | `prime-developers` group (deploy access), `prime-readonly` group (logs/metrics only), one IAM user per name in your tfvars lists |
+
+## Updating the API
+
 After making code changes, rebuild and push the image, then force a new ECS deployment:
-powershell# Push updated image
+
+```powershell
+# Push updated image
 docker build -t prime-api .
 docker tag prime-api:latest "$ECR_URL/prime-api:latest"
 docker push "$ECR_URL/prime-api:latest"
@@ -851,14 +1042,37 @@ docker push "$ECR_URL/prime-api:latest"
 # Redeploy ECS service with new image
 aws ecs update-service --cluster prime-cluster `
   --service prime-api-service --force-new-deployment
-Terraform Teardown
-powershellterraform destroy
-Type yes to confirm. This removes every resource Terraform created and stops all AWS charges.
+```
 
-Note: If terraform destroy gets stuck on the VPC, destroy ECS first then retry:
-powershellterraform destroy -target=module.ecs
+## Terraform Teardown
+
+```powershell
 terraform destroy
+```
 
+Type `yes` to confirm. This removes every resource Terraform created and stops all AWS charges.
 
-Troubleshooting
-ProblemFixdocker compose not foundMake sure Docker Desktop is runningprime_vpn container failsDocker needs WSL2 mode enabled in Docker Desktop settingsAddress already in use on docker composeRun docker network prune -f then retryWireGuard tunnel shows inactiveCheck Endpoint IP in peer.conf — use 127.0.0.1:51820 for localcurl behaves oddly in PowerShellUse curl.exe instead of curlECS task not startingCheck CloudWatch logs: aws logs tail /ecs/prime-apiRDS connection refusedConfirm sg-api is the source group on sg-db, not a CIDRterraform init failsCheck internet connection and that AWS CLI is configured (aws sts get-caller-identity)Error: ECR repository already existsRepo already exists — just push your image and continue with terraform applyRDS times out during terraform applyNormal — RDS takes 8–10 min. Let it run, do not cancel.ECS service stuck at 0/1 runningCheck logs: aws logs tail /ecs/prime-api --followterraform destroy stuck on VPCRun terraform destroy -target=module.ecs first, then terraform destroy
+> **Note:** If `terraform destroy` gets stuck on the VPC, destroy ECS first then retry:
+> ```powershell
+> terraform destroy -target=module.ecs
+> terraform destroy
+> ```
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `docker compose` not found | Make sure Docker Desktop is running |
+| `prime_vpn` container fails | Docker needs WSL2 mode enabled in Docker Desktop settings |
+| `Address already in use` on docker compose | Run `docker network prune -f` then retry |
+| WireGuard tunnel shows inactive | Check `Endpoint` IP in `peer.conf` — use `127.0.0.1:51820` for local |
+| `curl` behaves oddly in PowerShell | Use `curl.exe` instead of `curl` |
+| ECS task not starting | Check CloudWatch logs: `aws logs tail /ecs/prime-api` |
+| RDS connection refused | Confirm `sg-api` is the source group on `sg-db`, not a CIDR |
+| `terraform init` fails | Check internet connection and that AWS CLI is configured (`aws sts get-caller-identity`) |
+| `Error: ECR repository already exists` | Repo already exists — just push your image and continue with `terraform apply` |
+| RDS times out during `terraform apply` | Normal — RDS takes 8–10 min. Let it run, do not cancel. |
+| ECS service stuck at 0/1 running | Check logs: `aws logs tail /ecs/prime-api --follow` |
+| `terraform destroy` stuck on VPC | Run `terraform destroy -target=module.ecs` first, then `terraform destroy` |
